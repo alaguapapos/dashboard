@@ -71,3 +71,15 @@ test('partial card deposits sum only fully confirmed paid MXN card reports',()=>
  assert.equal(cardSettlementSummary([card]).confirmed,0);
  assert.equal(cardSettlementSummary([]).pending,0);
 });
+
+import {archivePayments,archivedFees,depositSummary} from '../lib/data/deposit-archive.ts';
+test('archived deposits remain queryable beyond the upstream 90-day window without estimates',()=>{
+ const summary=depositSummary({settlement_report_id:'r',disbursement_date:'2026-07-02',gross_amount:1555,total_fee:56,total_tax:8.93,total_retention:64.93,disbursed_net_amount:1490.07,total_transactions:1});
+ const payments=archivePayments([{date:'2026-07-01',payments:[{receipt_no:'a',charges:{charge:{fee:56,tax:8.93}},total_retention:64.93,settled_amount:1490.07,card_token:'must-not-save'}]}],summary.date);
+ assert.equal(archivedFees([{summary,payments}],'2026-07-01','2026-10-29').a.settledCents,149007);
+ assert.equal(Object.keys(archivedFees([{summary,payments},{summary,payments}],'2026-07-01','2026-10-29')).length,1);
+ assert.deepEqual(archivedFees([{summary,payments}],'2026-07-02','2026-10-29'),{});
+ assert.ok(!JSON.stringify(payments).includes('must-not-save'));
+ assert.throws(()=>archivedFees([{summary,payments},{summary,payments:[{...payments[0],settledCents:1}]}],'2026-07-01','2026-10-29'));
+ assert.throws(()=>archivePayments([{date:'2026-07-01'}],summary.date));
+});

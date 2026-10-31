@@ -1,7 +1,8 @@
 import { authorize } from '@/lib/server/auth';
 export const maxDuration=60;
-import {payments,clipGet} from '@/lib/data/clip';
+import {payments} from '@/lib/data/clip';
 
+import {readArchive,archiveState} from '@/lib/server/clip-archive';
 export const dynamic='force-dynamic';
 export async function GET(request:Request){
  const denied=await authorize();if(denied)return denied;
@@ -10,8 +11,9 @@ export async function GET(request:Request){
  const token=process.env.CLIP_TOKEN;
  const sources=await Promise.allSettled([
  token?payments(from,to,token):Promise.reject(Error('Falta configurar CLIP_TOKEN en el servidor.')),
- (async()=>{if(!token)throw Error('Falta configurar Clip.');const earliest=new Date(Date.now()-88*86400000).toISOString().slice(0,10);if(from<earliest)throw Error('Clip limita depósitos a los últimos 90 días. Selecciona un periodo reciente.');const r=await clipGet(`settlements?${new URLSearchParams({from,to})}`,token,'x-api-key');if(!Array.isArray(r.settlements))throw Error('Respuesta de depósitos inesperada.');return r.settlements.map((s:any)=>({date:s.disbursement_date,id:s.settlement_report_id,gross:s.gross_amount,fee:s.total_fee,tax:s.total_tax,retention:s.total_retention,net:s.disbursed_net_amount,count:s.total_transactions}));})()
+ readArchive().then(reports=>reports.map(r=>r.summary).filter(s=>s.date>=from&&s.date<=to))
  ]);
  const out:any={updatedAt:new Date().toISOString(),from,to};['clip','settlements'].forEach((key,i)=>{const r=sources[i];out[key]=r.status==='fulfilled'?{ok:true,data:r.value}:{ok:false,error:r.reason?.message??'No disponible'};});
+ out.archive=await archiveState().catch(()=>null);
  return Response.json(out,{headers:{'Cache-Control':'private, no-store'}});
 }
