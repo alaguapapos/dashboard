@@ -2,6 +2,8 @@
 @import "tw-animate-css";
 @import "../vendor/shadcn-tailwind-4.13.0.css";
 
+@custom-variant dark (&:where(.dark, .dark *));
+
 @utility scrollbar-thin {
   scrollbar-width: thin;
 }
@@ -94,41 +96,6 @@
     "Liberation Mono", "Courier New", monospace;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-    --card: #171717;
-    --card-foreground: #ededed;
-    --popover: #171717;
-    --popover-foreground: #ededed;
-    --primary: #ededed;
-    --primary-foreground: #171717;
-    --secondary: #262626;
-    --secondary-foreground: #ededed;
-    --muted: #262626;
-    --muted-foreground: #a1a1a1;
-    --accent: #262626;
-    --accent-foreground: #ededed;
-    --destructive: #ff6467;
-    --border: #ffffff1a;
-    --input: #ffffff26;
-    --ring: #737373;
-    --chart-1: #8e51ff;
-    --chart-2: #00bc7d;
-    --chart-3: #fe9a00;
-    --chart-4: #ad46ff;
-    --chart-5: #ff2056;
-    --sidebar: #171717;
-    --sidebar-foreground: #ededed;
-    --sidebar-primary: #8e51ff;
-    --sidebar-primary-foreground: #ededed;
-    --sidebar-accent: #262626;
-    --sidebar-accent-foreground: #ededed;
-    --sidebar-border: #ffffff1a;
-    --sidebar-ring: #737373;
-  }
-}
 
 body {
   background: var(--background);
@@ -165,3 +132,49 @@ body {
 .card-settlement{background:#fff;color:#214535;border-radius:10px;padding:16px 18px;margin-bottom:18px}.card-settlement>div{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:10px}.card-settlement span{font-size:15px;font-weight:600}.card-settlement strong{font-size:30px;line-height:1.2;letter-spacing:-.7px}.card-settlement p{font-size:13px;color:#466653;margin-top:8px}.sales-total .card-settlement small{display:block;font-size:11px;line-height:1.5;color:#617568;margin-top:10px}@media(max-width:700px){.card-settlement>div{align-items:flex-start;flex-direction:column}.card-settlement{padding:16px}}
 
 .calendar-picker button.calendar-closed-day{background:#f4eee5;color:#73552d;gap:2px}.calendar-picker .calendar-closed-label{font-size:8px;line-height:1;color:inherit;font-weight:600}.calendar-picker button.calendar-closed-day[data-selected-single=true],.calendar-picker button.calendar-closed-day[data-range-start=true],.calendar-picker button.calendar-closed-day[data-range-end=true]{background:#176c54;color:white}.calendar-closed-note{margin:8px 0 12px;padding:10px 12px;border-radius:8px;background:#f4eee5;color:#73552d;font-size:12px;line-height:1.5}
+
+/* Explicit, persistent themes. Shared tokens also cover portalled dialogs. */
+:root{color-scheme:light;--chart-grid:#e9ece8;--chart-label:#718078;--chart-sales:#1d8e72}
+.theme-toggle{display:inline-flex;align-items:center;justify-content:center;gap:0;min-height:44px;width:44px;min-width:44px;padding:0;border:1px solid var(--border);border-radius:9px;background:var(--card);color:var(--foreground);font-size:12px;font-weight:600}
+.theme-toggle:hover{background:var(--accent)}.theme-toggle svg{color:inherit}.theme-sun{display:none}.dark .theme-sun{display:inline}.dark .theme-moon{display:none}
+html.dark{color-scheme:dark;--background:#141518;--foreground:#eeeef0;--card:#202125;--card-foreground:#eeeef0;--popover:#27282d;--popover-foreground:#eeeef0;--primary:#7bd9b1;--primary-foreground:#10251c;--secondary:#2c2d33;--secondary-foreground:#eeeef0;--muted:#2c2d33;--muted-foreground:#b1b2bb;--accent:#303137;--accent-foreground:#f1f1f3;--border:#3b3c44;--input:#50515b;--ring:#7bd9b1;--destructive:#ff9b91;--chart-grid:#3b3c44;--chart-label:#b1b2bb;--chart-sales:#74d9af}
+.dark body{background:var(--background);color:var(--foreground)}
+.dark :is(.sidebar,.topbar,.metric,.panel,.modal,.date-controls,.period-shortcuts button,.single-day-picker,.card-settlement){background:var(--card);border-color:var(--border);color:var(--foreground)}
+.dark :is(h1,.brand,.row-main,.amount,.daily-table .daily-date,.register-table th[scope=row],.card-settlement){color:var(--foreground)}
+.dark :is(small,.eyebrow,.breadcrumb,.currency,.page-heading p,.panel-head p,.metric-top,.legend,.mix-legend span,.mix-legend small,.sync-text,.payment-filter-bar p,.coverage,.footer,.time,.row-main small,.table-footer,.table-footer button,.connection-card p,.connection-card ul,.history-body>p,details,.modal-head p,.modal form>label,.form-row>label,.modal label small,.daily-note,.daily-table td small,.daily-date small,.business-day-status,.card-settlement p,.sales-total .card-settlement small,.calendar-help){color:var(--muted-foreground)}
+.dark :is(.workspace,.connection,.profile,.search,.card-brand,.chart-footer,.modal-actions,details,.calendar-presets,.daily-table tr,.register-table tr,.transactions tr,.register-totals>div:last-child,.daily-table .daily-total){border-color:var(--border)}
+.dark :is(th,td){border-color:var(--border);color:var(--muted-foreground)}.dark th{background:#26272c}
+.dark :is(.daily-table .daily-date,.register-table th[scope=row]){background:var(--card)}
+.dark :is(nav button,.icon-button,.text-button){color:var(--muted-foreground)}
+.dark :is(nav button:hover,.icon-button:hover){background:var(--accent)}
+.dark nav button.active{background:#33363d;color:#e7e8ed}.dark .nav-dot{background:#7bd9b1}
+.dark :is(.workspace-avatar,.transaction-icon,.connection-symbol,.tag){background:#303137;color:#c7c9d0}
+.dark .avatar{background:#303137;border-color:var(--card);outline-color:var(--border);color:#d6d7dd}
+.dark .mobile-bottom-nav{background:#202125f5;border-color:var(--border)}
+.dark :is(.toolbar-right button,.table-tools select,.modal input,.modal select,.single-day-picker input){background:var(--card);color:var(--foreground);border-color:var(--input)}
+.dark input::placeholder{color:#b1b2bb}.dark .search:focus-within{outline:2px solid var(--ring)}
+.dark :is(.payment-filter,.calendar-modes){background:#191a1e;border-color:var(--border)}
+.dark :is(.payment-filter button,.calendar-modes button){color:var(--muted-foreground)}
+.dark :is(.payment-filter button:hover,.calendar-presets button:hover){background:var(--accent)}
+.dark :is(.payment-filter button.selected,.calendar-modes button[aria-pressed=true]){background:#3b3d46;color:#f4f4f6}
+.dark :is(.daily-period,.register-totals,.fee-summary,.expense-hint,.insight){background:#282a30;border-color:var(--border);color:#e4e5eb}
+.dark :is(.register-totals span,.register-totals small,.fee-summary span,.insight p,.insight button){color:#babcc6}
+.dark :is(.register-totals strong,.register-expected,.daily-net,.daily-table .daily-total,.fee-summary strong,.receipt-link){color:#8cddb5}
+.dark .insight-icon{background:#3b3d46;color:#d4d6e0}
+.dark .metric.feature{background:#176c54;border-color:#358b6d;color:white}.dark .feature .metric-top{color:#e2f5ea}.dark .feature small{color:#c9e7d7}
+.dark .card-settlement{background:#191a1e}.dark .sales-total .card-settlement small{color:#bfc1ca}
+.dark .soft-pill,.dark .peach{background:#463729!important;color:#f0c391}.dark .green{background:#2d4331!important;color:#b5d8a2}.dark .lavender{background:#39334d!important;color:#d0bfe8}
+.dark .status.paid,.dark .notice{background:#234132;border-color:#3c644c;color:#b1e7c5}.dark .status.cancelled,.dark .warning{background:#443524;border-color:#6d5438;color:#f2c993}.dark .form-error{color:#ffb7a3}
+.dark .empty,.dark .empty strong{color:var(--muted-foreground)}
+.dark .calendar-popover{background:var(--popover)!important;color:var(--foreground)!important;border-color:var(--border)!important}
+.dark .date-selector-trigger{background:var(--card)!important;color:var(--foreground);border-color:var(--border)}.dark .date-selector-trigger small{color:var(--muted-foreground)}
+.dark .calendar-picker{background:var(--popover)!important;--accent:#3b3d46;--accent-foreground:#f4f4f6;--muted-foreground:#b1b2bb}
+.dark .calendar-presets :is(select,button){background:var(--card);color:var(--foreground);border-color:var(--border)}
+.dark .calendar-picker button.calendar-closed-day{background:#443524;color:#f2c993}
+.dark .calendar-picker button:is([data-selected-single=true],[data-range-start=true],[data-range-end=true]){background:#7bd9b1;color:#10251c}
+.dark .recharts-default-tooltip{background:var(--card)!important;border-color:var(--border)!important;color:var(--foreground)!important}.dark .recharts-tooltip-item{color:var(--foreground)!important}
+@media(max-width:700px){.theme-toggle{padding:0}.topbar .top-right{gap:6px}.dark .daily-table .daily-date{background:transparent}}
+
+.dark .sales-total{background:linear-gradient(115deg,#282b30,#30343b)!important;border-color:#52645d;box-shadow:0 8px 24px #00000024}
+.dark .sales-total .metric-top,.dark .sales-breakdown span,.dark .sales-total .metric-foot small{color:#d7dadf}
+.dark .metric.feature:not(.sales-total){background:#2b3036;border-color:#52645d}
