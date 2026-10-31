@@ -1,7 +1,7 @@
 import { authorize } from '@/lib/server/auth';
 export const maxDuration=60;
 import {clipGet} from '@/lib/data/clip';
-import {reportedFee,settlementPath,type ReportedFee} from '@/lib/data/fees';
+import {reportedFee,settlementPath,settlementHistory,type ReportedFee} from '@/lib/data/fees';
 export const dynamic='force-dynamic';
 export async function GET(request:Request){
  const denied=await authorize();if(denied)return denied;
@@ -11,9 +11,9 @@ export async function GET(request:Request){
  if(!/^\d{4}-\d{2}-\d{2}$/.test(from)||!/^\d{4}-\d{2}-\d{2}$/.test(to)||!Number.isFinite(Date.parse(from))||!Number.isFinite(Date.parse(to))||from>to||to>today)return Response.json({ok:false,error:'Periodo inválido.'},{status:400,headers});
  try{
   const token=process.env.CLIP_TOKEN;if(!token)throw Error('Falta configurar Clip.');
-  if(from<new Date(Date.now()-88*86400000).toISOString().slice(0,10))throw Error('Clip solo permite consultar los desgloses de depósitos recientes.');
+  const history=settlementHistory(from,today);
   // Search through today: a selected sale may have been deposited on a later date.
-  const list=await clipGet('settlements?'+new URLSearchParams({from,to:today}),token,'x-api-key');
+  const list=await clipGet('settlements?'+new URLSearchParams({from:history.queryFrom,to:today}),token,'x-api-key');
   if(!Array.isArray(list.settlements))throw Error('Respuesta de liquidaciones inesperada.');
   const data:Record<string,ReportedFee>={};let cursor=0,failures=0;
   await Promise.all(Array.from({length:Math.min(4,list.settlements.length)},async()=>{
@@ -32,6 +32,6 @@ export async function GET(request:Request){
     }catch{failures++;}
    }
   }));
-  return Response.json({ok:true,data,partial:failures>0,updatedAt:new Date().toISOString()},{headers});
+  return Response.json({ok:true,data,partial:failures>0||history.limited,historyLimited:history.limited,availableFrom:history.earliest,failedReports:failures,updatedAt:new Date().toISOString()},{headers});
  }catch(e){return Response.json({ok:false,error:e instanceof Error?e.message:'No se pudieron consultar las comisiones.'},{status:503,headers});}
 }

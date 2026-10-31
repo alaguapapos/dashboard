@@ -57,3 +57,17 @@ test('business day ends at 7:30pm Mexico City without shifting calendar dates',(
  assert.equal(dayStatus('2026-10-30',new Date('2026-10-31T01:30:00Z')),'Jornada finalizada');
  assert.equal(dayStatus('2026-10-29',new Date('2026-10-30T12:00:00Z')),'Jornada finalizada');
 });
+
+import {settlementHistory,cardSettlementSummary} from '../lib/data/fees.ts';
+test('long ranges retain the available settlement window, including today as day 90',()=>{
+ assert.deepEqual(settlementHistory('2026-07-01','2026-10-30'),{queryFrom:'2026-08-02',earliest:'2026-08-02',limited:true});
+ assert.equal(settlementHistory('2026-10-21','2026-10-30').queryFrom,'2026-10-21');
+ assert.equal(settlementHistory('2026-08-02','2026-10-30').limited,false);
+});
+test('partial card deposits sum only fully confirmed paid MXN card reports',()=>{
+ const card={status:'Paid',currency:'MXN',method:'CREDIT',amount:1555};
+ const rows=[{...card,settledCents:149007,deductionCents:6493},card,{...card,settledCents:500}, {...card,method:'CASH',settledCents:10000,deductionCents:0},{...card,status:'Cancelled',settledCents:99999,deductionCents:0}];
+ assert.deepEqual(cardSettlementSummary(rows),{count:3,confirmed:1,pending:2,settledCents:149007,deductionCents:6493});
+ assert.equal(cardSettlementSummary([card]).confirmed,0);
+ assert.equal(cardSettlementSummary([]).pending,0);
+});

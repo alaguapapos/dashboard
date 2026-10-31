@@ -13,3 +13,14 @@ export function settlementPath(href:string){
  if(url.origin!=='https://api-gw.payclip.com'||!/^\/settlements\/[a-zA-Z0-9-]+$/.test(url.pathname))throw Error('Enlace de liquidación inesperado.');
  return url.pathname.slice(1)+url.search;
 }
+
+/** Clip includes today in its 90-calendar-day settlement history. */
+export function settlementHistory(from:string,today:string){
+ const earliest=new Date(Date.parse(today+'T12:00:00Z')-89*86400000).toISOString().slice(0,10);
+ return {queryFrom:from<earliest?earliest:from,earliest,limited:from<earliest};
+}
+export function cardSettlementSummary(payments:any[]){
+ const cards=payments.filter(p=>p.status?.toLowerCase()==='paid'&&p.currency==='MXN'&&(p.method==='CREDIT'||p.method==='DEBIT'));
+ const confirmed=cards.filter(p=>Number.isSafeInteger(p.settledCents)&&Number.isSafeInteger(p.deductionCents));
+ return {count:cards.length,confirmed:confirmed.length,pending:cards.length-confirmed.length,settledCents:confirmed.reduce((n,p)=>n+p.settledCents,0),deductionCents:confirmed.reduce((n,p)=>n+p.deductionCents,0)};
+}
