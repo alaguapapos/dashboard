@@ -1,14 +1,16 @@
-import {env} from 'cloudflare:workers';
+import { authorize } from '@/lib/server/auth';
+export const maxDuration=60;
 import {clipGet} from '@/lib/data/clip';
 import {reportedFee,settlementPath,type ReportedFee} from '@/lib/data/fees';
 export const dynamic='force-dynamic';
 export async function GET(request:Request){
+ const denied=await authorize();if(denied)return denied;
  const headers={'Cache-Control':'private, no-store'};
  const q=new URL(request.url).searchParams,from=q.get('from')??'',to=q.get('to')??'';
  const today=new Intl.DateTimeFormat('en-CA',{timeZone:'America/Mexico_City',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
  if(!/^\d{4}-\d{2}-\d{2}$/.test(from)||!/^\d{4}-\d{2}-\d{2}$/.test(to)||!Number.isFinite(Date.parse(from))||!Number.isFinite(Date.parse(to))||from>to||to>today)return Response.json({ok:false,error:'Periodo inválido.'},{status:400,headers});
  try{
-  const token=(env as unknown as {CLIP_TOKEN?:string}).CLIP_TOKEN;if(!token)throw Error('Falta configurar Clip.');
+  const token=process.env.CLIP_TOKEN;if(!token)throw Error('Falta configurar Clip.');
   if(from<new Date(Date.now()-88*86400000).toISOString().slice(0,10))throw Error('Clip solo permite consultar los desgloses de depósitos recientes.');
   // Search through today: a selected sale may have been deposited on a later date.
   const list=await clipGet('settlements?'+new URLSearchParams({from,to:today}),token,'x-api-key');

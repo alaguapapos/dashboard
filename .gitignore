@@ -46,3 +46,6 @@ yarn-error.log*
 
 # Track the empty configuration template only.
 !.env.example
+
+/.vercel/
+/migration-data/
