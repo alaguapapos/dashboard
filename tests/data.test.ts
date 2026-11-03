@@ -28,9 +28,9 @@ test('register uses daily float once and excludes expenses paid outside register
  const d=registerDays(sales,expenses,'2026-10-23','2026-10-24');
  assert.equal(d[1].expectedCents,123500);assert.equal(d[1].receiptCount,1);assert.equal(d[1].expenseCount,1);assert.equal(d[1].unclassifiedCount,1);assert.equal(d[0].expectedCents,100000);
 });
-test('register expense requires a receipt and worker; typed file names cannot spoof receipts',()=>{
+test('register expense allows no receipt but still requires cash and worker; uploaded files remain validated',()=>{
  const e={id:'test-expense-01',date:'2026-10-23',cents:15000,description:'Jabón',category:'Insumos',method:'Efectivo',cash_source:'register',spent_by:'Ana'};
- assert.equal(validateExpense(e,true),null);assert.ok(validateExpense(e,false));assert.ok(validateExpense({...e,spent_by:''},true));assert.ok(validateExpense({...e,method:'Tarjeta'},true));assert.equal(validateExpense({...e,cash_source:'other',spent_by:''},false),null);
+ assert.equal(validateExpense(e),null);assert.equal(validateExpense({...e,receipt_key:null}),null);assert.ok(validateExpense({...e,spent_by:''}));assert.ok(validateExpense({...e,method:'Tarjeta'}));assert.equal(validateExpense({...e,cash_source:'other',spent_by:''}),null);
  assert.equal(receiptType(new TextEncoder().encode('<script>alert(1)</script>')),null);assert.equal(receiptType(new TextEncoder().encode('%PDF-1.7')),'application/pdf');
 });
 

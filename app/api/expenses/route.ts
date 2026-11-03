@@ -19,7 +19,7 @@ export async function POST(request:Request){
   if(typeof e.id!=='string')throw Error();
   const db=admin();const old=await db.from('expenses').select('*').eq('id',e.id).maybeSingle();if(old.error)throw old.error;
   const existing=old.data;
-  const invalid=validateExpense(e,!!e.uploadId||!!existing?.receipt_key);if(invalid)return Response.json({error:invalid},{status:400,headers});
+  const invalid=validateExpense(e);if(invalid)return Response.json({error:invalid},{status:400,headers});
   let key=existing?.receipt_key??null,name=existing?.receipt_name??null,type=existing?.receipt_type??null;
   if(e.uploadId){
    const pending=await db.from('receipt_uploads').select('*').eq('id',e.uploadId).eq('user_id',user.id).eq('expense_id',e.id).gt('expires_at',new Date().toISOString()).single();if(pending.error||!pending.data)throw Error();
