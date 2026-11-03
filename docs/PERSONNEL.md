@@ -1,7 +1,7 @@
 # Personnel and worker attendance
 
 Owner page: `/personal`, protected by the existing dashboard administrator login.
-Worker page: `/equipo`, separate username and four-digit PIN session.
+Worker page: `/equipo`, shared-phone roster. Workers select their name, enter their four-digit PIN, and choose an explicit entry or exit action. The screen returns to the roster automatically, clears the PIN, and clears an abandoned PIN form after 30 seconds.
 
 ## Payroll rules
 
@@ -31,12 +31,16 @@ The five initial profiles (Julio, Emilio, Diego, Alejandro, Mitch) and their PIN
 
 ## Authentication and consistency
 
-Worker cookies are HttpOnly, SameSite=Strict, secure on HTTPS, with a 12-hour lifetime. Only token hashes are stored. PIN reset, username change, or deactivation revokes sessions. Five failed attempts lock a username for 15 minutes; a second hashed-network rate limit restricts bulk login attempts. Vercel's trusted forwarded IP is used in production.
+The shared clock authenticates each action with a PIN and retains no worker session or cookie. Legacy worker cookies are cleared; the old persistent-login API is no longer available. The unauthenticated roster exposes only active workers’ IDs, names, and roles, never PINs, pay, or attendance history. PIN reset, username change, or deactivation also revokes any legacy sessions. Five failed attempts lock a username for 15 minutes; a second hashed-network rate limit restricts bulk login attempts. Vercel's trusted forwarded IP is used in production.
 
-All personnel operations run inside database transactions with a shared advisory lock, so simultaneous requests across instances cannot create duplicate open shifts, lose rate-limit increments, or race corrections against checkouts. Clock-in uses an idempotency key and clock-out uses the shift ID. The database also enforces one open shift per worker. Workers can only read and mutate their own attendance; they cannot access financial/admin routes. Mutations require same-origin requests.
+All personnel operations run inside database transactions with a shared advisory lock, so simultaneous requests across instances cannot create duplicate open shifts, lose rate-limit increments, or race corrections against checkouts. The `clock_requests` table stores per-action idempotency receipts. A retried entry or exit returns its original result and cannot affect a later shift. The database also enforces one open shift per worker. Workers can only clock their own entry/exit with a valid PIN; they cannot access attendance history or financial/admin routes. Mutations require same-origin requests.
 
 ## Verification
 
 `npm test` runs payroll, legacy persistence, and existing financial tests. For real Postgres integration coverage, supply a dedicated test database URL as `PERSONNEL_TEST_DATABASE_URL` and run the tests. The integration test creates a uniquely named temporary worker, tests cross-connection concurrency, login throttling/revocation, cutoff calculations, audit history and database privileges, then removes only that test worker's records.
 
 `npm run build` verifies the deployable production bundle. The Vercel project already provides `POSTGRES_URL` in production through its Supabase integration. The local development server now uses the same durable database: local attendance changes are real business records.
+
+## Dashboard username login
+
+The main login accepts the unique local part of an email already in `DASHBOARD_ALLOWED_EMAILS` (currently `alaguapapos`). The server resolves the email privately and verifies the existing Supabase password. Password requirements and administrator allowlisting are unchanged. Ambiguous usernames are rejected.

@@ -66,6 +66,27 @@ export class PostgresPersonnelStore {
   await this.client.query('DELETE FROM personnel.attempts WHERE username=$1',['user:'+username]);
   const token=randomBytes(32).toString('base64url');await this.client.query('INSERT INTO personnel.sessions VALUES($1,$2,$3)',[digest(token),record.id,now+12*3600000]);return token;
  }
+ async kioskClock(workerId:string,pin:string,operation:'in'|'out',requestId:string,network='unknown'){
+  if(!['in','out'].includes(operation)||! /^[a-zA-Z0-9-]{16,80}$/.test(requestId))return new PersonnelError('Selecciona entrada o salida.');
+  const worker=await this.worker(workerId);
+  const token=await this.login(worker?.username??'unknown-worker',pin,network);
+  if(token instanceof PersonnelError)return token;
+  await this.logout(token); // PIN authenticates this action only; no session survives.
+  if(!worker)return new PersonnelError('Usuario o PIN incorrectos.',401);
+  const previous=(await this.rows<{worker_id:string;operation:string;shift_id:string}>('SELECT worker_id,operation,shift_id FROM personnel.clock_requests WHERE request_id=$1',[requestId]))[0];
+  let shift:Shift;
+  if(previous){
+   if(previous.worker_id!==worker.id||previous.operation!==operation)return new PersonnelError('Actualiza la página e intenta de nuevo.',409);
+   shift=(await this.rows<Shift>('SELECT * FROM personnel.shifts WHERE id=$1',[previous.shift_id]))[0];
+  }else{
+   const open=await this.current(worker.id);
+   if(operation==='in'&&open)return new PersonnelError('Ya tienes una entrada registrada. Selecciona salida al terminar.',409);
+   if(operation==='out'&&!open)return new PersonnelError('No tienes una entrada activa. Selecciona entrada para comenzar.',409);
+   shift=await this.clock(worker.id,operation,operation==='out'?open!.id:requestId);
+   await this.client.query('INSERT INTO personnel.clock_requests(request_id,worker_id,operation,shift_id) VALUES($1,$2,$3,$4)',[requestId,worker.id,operation,shift.id]);
+  }
+  return {name:worker.name,operation,at:operation==='in'?shift.started_at:shift.ended_at};
+ }
  async session(token:string,now=Date.now()){
   const row=(await this.rows<{worker_id:string}>('SELECT worker_id FROM personnel.sessions WHERE token_hash=$1 AND expires>$2',[digest(token),now]))[0];
   const worker=row?await this.worker(row.worker_id):undefined;return worker?.active?worker:null;

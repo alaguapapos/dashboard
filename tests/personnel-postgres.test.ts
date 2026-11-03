@@ -25,9 +25,19 @@ test('Supabase personnel: durable auth, concurrent clocks, payroll cutoff, audit
   const reset=await run(s=>s.resetPin(id));assert.equal(await run(s=>s.session(token as string)),null);
   const newToken=await run(s=>s.login(worker.username,reset.pin,'integration-network'));assert.equal(typeof newToken,'string');
   await run(s=>s.saveWorker({...worker,active:false}));assert.equal(await run(s=>s.session(newToken as string)),null);
+  await run(s=>s.saveWorker({...worker,active:true}));
+  const kioskKey=randomUUID();
+  const [kioskA,kioskB]=await Promise.all([run(s=>s.kioskClock(id,reset.pin,'in',kioskKey,'integration-kiosk')),runPersonnel(otherPool,s=>s.kioskClock(id,reset.pin,'in',kioskKey,'integration-kiosk'))]);
+  assert.ok(!(kioskA instanceof PersonnelError));assert.deepEqual(kioskA,kioskB);
+  assert.equal((await pool.query('SELECT count(*)::int AS count FROM personnel.sessions WHERE worker_id=$1',[id])).rows[0].count,0);
+  const again=await run(s=>s.kioskClock(id,reset.pin,'in',randomUUID(),'integration-kiosk'));assert.ok(again instanceof PersonnelError);assert.equal(again.status,409);
+  const wrong=await run(s=>s.kioskClock(id,'bad','out',randomUUID(),'integration-kiosk'));assert.ok(wrong instanceof PersonnelError);assert.equal(wrong.status,401);assert.ok(await run(s=>s.current(id)));
+  const outKey=randomUUID();const out=await run(s=>s.kioskClock(id,reset.pin,'out',outKey,'integration-kiosk'));assert.ok(!(out instanceof PersonnelError));assert.equal(await run(s=>s.current(id)),null);
+  const next=await run(s=>s.kioskClock(id,reset.pin,'in',randomUUID(),'integration-kiosk'));assert.ok(!(next instanceof PersonnelError));
+  assert.deepEqual(await run(s=>s.kioskClock(id,reset.pin,'out',outKey,'integration-kiosk')),out);assert.ok(await run(s=>s.current(id)),'retrying an old exit must not close the new shift');
   const access=(await pool.query("SELECT has_schema_privilege('anon','personnel','USAGE') AS anon,has_schema_privilege('authenticated','personnel','USAGE') AS authenticated,(SELECT bool_and(relrowsecurity) FROM pg_class JOIN pg_namespace ON pg_namespace.oid=relnamespace WHERE nspname='personnel' AND relkind='r') AS rls")).rows[0];assert.deepEqual(access,{anon:false,authenticated:false,rls:true});
  }finally{
-  if(id)await run(async s=>{const w=await s.worker(id);assert.ok(w?.username.startsWith('test.'));await s.client.query('DELETE FROM personnel.audit WHERE shift_id IN (SELECT id FROM personnel.shifts WHERE worker_id=$1)',[id]);await s.client.query('DELETE FROM personnel.sessions WHERE worker_id=$1',[id]);await s.client.query('DELETE FROM personnel.shifts WHERE worker_id=$1',[id]);await s.client.query('DELETE FROM personnel.attempts WHERE username=$1',['user:'+w.username]);await s.client.query('DELETE FROM personnel.workers WHERE id=$1',[id]);});
+  if(id)await run(async s=>{const w=await s.worker(id);assert.ok(w?.username.startsWith('test.'));await s.client.query('DELETE FROM personnel.clock_requests WHERE worker_id=$1',[id]);await s.client.query('DELETE FROM personnel.audit WHERE shift_id IN (SELECT id FROM personnel.shifts WHERE worker_id=$1)',[id]);await s.client.query('DELETE FROM personnel.sessions WHERE worker_id=$1',[id]);await s.client.query('DELETE FROM personnel.shifts WHERE worker_id=$1',[id]);await s.client.query('DELETE FROM personnel.attempts WHERE username=$1',['user:'+w.username]);await s.client.query('DELETE FROM personnel.workers WHERE id=$1',[id]);});
   await pool.end();await otherPool.end();
  }
 });

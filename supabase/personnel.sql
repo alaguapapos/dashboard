@@ -34,3 +34,14 @@ ALTER TABLE personnel.settings ENABLE ROW LEVEL SECURITY;
 REVOKE ALL ON ALL TABLES IN SCHEMA personnel FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON ALL SEQUENCES IN SCHEMA personnel FROM PUBLIC, anon, authenticated;
 COMMIT;
+
+-- Idempotency receipts for the shared-phone clock. No worker session is retained.
+BEGIN;
+CREATE TABLE IF NOT EXISTS personnel.clock_requests (
+ request_id text PRIMARY KEY, worker_id text NOT NULL REFERENCES personnel.workers(id),
+ operation text NOT NULL CHECK(operation IN ('in','out')),
+ shift_id text NOT NULL REFERENCES personnel.shifts(id), created_at timestamptz NOT NULL DEFAULT now()
+);
+ALTER TABLE personnel.clock_requests ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON personnel.clock_requests FROM PUBLIC, anon, authenticated;
+COMMIT;
