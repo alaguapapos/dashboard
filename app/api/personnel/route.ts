@@ -13,6 +13,7 @@ export async function POST(request:Request){
  try{const body=await request.json();const result=await withPersonnel(async s=>{
   if(body.action==='save')return s.saveWorker(body.worker);
   if(body.action==='pin')return s.resetPin(String(body.id??''));
+  if(body.action==='delete')return s.remove(String(body.id??''),String(body.reason??''),user.email!);
   if(body.action==='correct')return s.correct(String(body.id??''),String(body.start??''),String(body.end??''),String(body.reason??''),user.email!);
   throw new PersonnelError('Acción no válida.');
  });return personnelJson(result);}catch(e){return personnelError(e);}

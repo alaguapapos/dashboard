@@ -45,3 +45,10 @@ CREATE TABLE IF NOT EXISTS personnel.clock_requests (
 ALTER TABLE personnel.clock_requests ENABLE ROW LEVEL SECURITY;
 REVOKE ALL ON personnel.clock_requests FROM PUBLIC, anon, authenticated;
 COMMIT;
+
+-- Retain removed entries for audit, excluding them from attendance and payroll.
+BEGIN;
+ALTER TABLE personnel.shifts ADD COLUMN IF NOT EXISTS deleted_at timestamptz;
+DROP INDEX IF EXISTS personnel.one_open_shift;
+CREATE UNIQUE INDEX one_open_shift ON personnel.shifts(worker_id) WHERE ended_at IS NULL AND deleted_at IS NULL;
+COMMIT;

@@ -203,3 +203,6 @@ html.dark{color-scheme:dark;--background:#141518;--foreground:#eeeef0;--card:#20
  .mobile-bottom-nav :is(a,button):hover{background:var(--muted)}
  .people-content{padding-bottom:calc(100px + env(safe-area-inset-bottom))}
 }
+
+.people-button.danger{color:#b34436}.shift-records td:last-child{display:flex;gap:8px;flex-wrap:wrap}
+@media(max-width:640px){.shift-records,.shift-records tbody{display:block;width:100%}.shift-records thead{display:none}.shift-records tr{display:grid;grid-template-columns:1fr 1fr;padding:16px 0;border-bottom:1px solid var(--border)}.shift-records td{display:block;border:0;padding:6px 8px;white-space:normal}.shift-records td:first-child{grid-column:1/-1;font-weight:650}.shift-records td:nth-child(2):before{content:'Entrada';display:block;color:var(--muted-foreground);font-size:11px}.shift-records td:nth-child(3):before{content:'Salida';display:block;color:var(--muted-foreground);font-size:11px}.shift-records td:last-child{grid-column:1/-1;display:flex}.shift-records td:last-child button{flex:1;min-height:44px}}

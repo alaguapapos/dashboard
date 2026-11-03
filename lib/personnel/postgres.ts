@@ -31,7 +31,7 @@ export class PostgresPersonnelStore {
  async rows<T>(sql:string,params:unknown[]=[]):Promise<T[]>{const result=await this.client.query(sql,params);return result.rows.map(row=>Object.fromEntries(Object.entries(row).map(([k,v])=>[k,v instanceof Date?v.toISOString():v]))) as T[];}
  async workers(){return this.rows<Worker>(`SELECT ${publicColumns} FROM personnel.workers ORDER BY active DESC,name`);}
  async worker(id:string){return (await this.rows<Worker>(`SELECT ${publicColumns} FROM personnel.workers WHERE id=$1`,[id]))[0];}
- async current(id:string){return (await this.rows<Shift>('SELECT * FROM personnel.shifts WHERE worker_id=$1 AND ended_at IS NULL',[id]))[0]??null;}
+ async current(id:string){return (await this.rows<Shift>('SELECT * FROM personnel.shifts WHERE deleted_at IS NULL AND worker_id=$1 AND ended_at IS NULL',[id]))[0]??null;}
  async saveWorker(input:{id?:string;name:string;username:string;role:WorkerRole;active:boolean}){
   const name=String(input?.name??'').trim(),username=String(input?.username??'').trim().toLowerCase();
   if(!name||name.length>80||!/^[a-z0-9][a-z0-9._-]{2,39}$/.test(username)||!Object.hasOwn(RATES,input?.role)||typeof input?.active!=='boolean')fail('Revisa el nombre, tipo y usuario (3–40 letras sin acentos, números, puntos o guiones).');
@@ -77,7 +77,7 @@ export class PostgresPersonnelStore {
   let shift:Shift;
   if(previous){
    if(previous.worker_id!==worker.id||previous.operation!==operation)return new PersonnelError('Actualiza la página e intenta de nuevo.',409);
-   shift=(await this.rows<Shift>('SELECT * FROM personnel.shifts WHERE id=$1',[previous.shift_id]))[0];
+   shift=(await this.rows<Shift>('SELECT * FROM personnel.shifts WHERE deleted_at IS NULL AND id=$1',[previous.shift_id]))[0];
   }else{
    const open=await this.current(worker.id);
    if(operation==='in'&&open)return new PersonnelError('Ya tienes una entrada registrada. Selecciona salida al terminar.',409);
@@ -85,6 +85,7 @@ export class PostgresPersonnelStore {
    shift=await this.clock(worker.id,operation,operation==='out'?open!.id:requestId);
    await this.client.query('INSERT INTO personnel.clock_requests(request_id,worker_id,operation,shift_id) VALUES($1,$2,$3,$4)',[requestId,worker.id,operation,shift.id]);
   }
+  if(!shift)fail('Este registro fue eliminado por el administrador.',409);
   return {name:worker.name,operation,at:operation==='in'?shift.started_at:shift.ended_at};
  }
  async session(token:string,now=Date.now()){
@@ -96,30 +97,38 @@ export class PostgresPersonnelStore {
   if(!/^[a-zA-Z0-9-]{16,80}$/.test(requestId))fail('Identificador de registro inválido.');
   const worker=await this.worker(id);if(!worker?.active)fail('Acceso no disponible.',401);
   if(action==='in'){
-   const duplicate=(await this.rows<Shift>('SELECT * FROM personnel.shifts WHERE request_id=$1 AND worker_id=$2',[requestId,id]))[0];if(duplicate)return duplicate;
+   const duplicate=(await this.rows<Shift>('SELECT * FROM personnel.shifts WHERE deleted_at IS NULL AND request_id=$1 AND worker_id=$2',[requestId,id]))[0];if(duplicate)return duplicate;
    const open=await this.current(id);if(open)return open;
-   if((await this.rows('SELECT id FROM personnel.shifts WHERE worker_id=$1 AND ended_at>$2',[id,now])).length)fail('Hay un registro posterior a esta hora.');
-   const newId=randomUUID();await this.client.query('INSERT INTO personnel.shifts VALUES($1,$2,$3,$4,$5,NULL,$6)',[newId,id,worker.role,RATES[worker.role],now,requestId]);return (await this.current(id))!;
+   if((await this.rows('SELECT id FROM personnel.shifts WHERE deleted_at IS NULL AND worker_id=$1 AND ended_at>$2',[id,now])).length)fail('Hay un registro posterior a esta hora.');
+   const newId=randomUUID();await this.client.query('INSERT INTO personnel.shifts(id,worker_id,role,rate_cents,started_at,ended_at,request_id) VALUES($1,$2,$3,$4,$5,NULL,$6)',[newId,id,worker.role,RATES[worker.role],now,requestId]);return (await this.current(id))!;
   }
-  const shift=(await this.rows<Shift>('SELECT * FROM personnel.shifts WHERE id=$1 AND worker_id=$2',[requestId,id]))[0];if(!shift)fail('Turno no encontrado. Actualiza la página.',409);if(shift.ended_at)return shift;
+  const shift=(await this.rows<Shift>('SELECT * FROM personnel.shifts WHERE deleted_at IS NULL AND id=$1 AND worker_id=$2',[requestId,id]))[0];if(!shift)fail('Turno no encontrado. Actualiza la página.',409);if(shift.ended_at)return shift;
   if(Date.parse(now)<=Date.parse(shift.started_at))fail('Espera un momento antes de registrar la salida.');
   await this.client.query('UPDATE personnel.shifts SET ended_at=$1 WHERE id=$2',[now,shift.id]);return {...shift,ended_at:now};
  }
- async history(id:string){return this.rows<Shift>('SELECT * FROM personnel.shifts WHERE worker_id=$1 ORDER BY started_at DESC LIMIT 50',[id]);}
- async range(from:string,to:string){return this.rows<Shift>('SELECT * FROM personnel.shifts WHERE started_at<$1 AND (ended_at IS NULL OR ended_at>$2) ORDER BY started_at DESC',[new Date(dayStart(to)+86400000).toISOString(),new Date(dayStart(from)).toISOString()]);}
+ async history(id:string){return this.rows<Shift>('SELECT * FROM personnel.shifts WHERE deleted_at IS NULL AND worker_id=$1 ORDER BY started_at DESC LIMIT 50',[id]);}
+ async range(from:string,to:string){return this.rows<Shift>('SELECT * FROM personnel.shifts WHERE deleted_at IS NULL AND started_at<$1 AND (ended_at IS NULL OR ended_at>$2) ORDER BY started_at DESC',[new Date(dayStart(to)+86400000).toISOString(),new Date(dayStart(from)).toISOString()]);}
  async report(from:string,to:string,now=new Date().toISOString()){
   try{validateRange(from,to);}catch(e){fail((e as Error).message);}
   const periods=payPeriods(now);
   const estimate=async(a:string,b:string)=>{const records=await this.range(a,b);const completed=payroll(records,a,b);const live=payroll(records.map(s=>s.ended_at?s:{...s,ended_at:now}),a,b);return {from:a,to:b,days:live,completedCents:completed.reduce((n,d)=>n+d.cents,0),liveCents:live.reduce((n,d)=>n+d.cents,0),openCount:records.filter(s=>!s.ended_at).length};};
   const shifts=await this.range(from,to);
-  return {workers:await this.workers(),shifts,active:await this.rows<Shift>('SELECT * FROM personnel.shifts WHERE ended_at IS NULL'),days:payroll(shifts,from,to),week:await estimate(periods.weekFrom,periods.weekTo),month:await estimate(periods.monthFrom,periods.monthTo),audit:await this.rows<Audit>('SELECT * FROM personnel.audit ORDER BY id DESC LIMIT 100'),now};
+  return {workers:await this.workers(),shifts,active:await this.rows<Shift>('SELECT * FROM personnel.shifts WHERE deleted_at IS NULL AND ended_at IS NULL'),days:payroll(shifts,from,to),week:await estimate(periods.weekFrom,periods.weekTo),month:await estimate(periods.monthFrom,periods.monthTo),audit:await this.rows<Audit>('SELECT * FROM personnel.audit ORDER BY id DESC LIMIT 100'),now};
+ }
+ async remove(id:string,reason:string,actor:string,now=Date.now()){
+  reason=String(reason??'').trim();if(reason.length<5||reason.length>500)fail('Escribe un motivo de entre 5 y 500 caracteres.');
+  const shift=(await this.rows<Shift>('SELECT * FROM personnel.shifts WHERE deleted_at IS NULL AND id=$1',[id]))[0];if(!shift)fail('Turno no encontrado.',404);
+  const deleted_at=new Date(now).toISOString();
+  await this.client.query('UPDATE personnel.shifts SET deleted_at=$1 WHERE id=$2',[deleted_at,id]);
+  await this.client.query('INSERT INTO personnel.audit(shift_id,actor,reason,before_json,after_json,created_at) VALUES($1,$2,$3,$4,$5,$6)',[id,actor,reason,JSON.stringify(shift),JSON.stringify({...shift,deleted_at}),deleted_at]);
+  return {ok:true};
  }
  async correct(id:string,start:string,end:string,reason:string,actor:string,now=Date.now()){
   const a=Date.parse(start),b=Date.parse(end);reason=String(reason??'').trim();
   if(!Number.isFinite(a)||!Number.isFinite(b)||a>=b||b>now||a<Date.parse('2026-01-01')||reason.length<5||reason.length>500)fail('Revisa las horas (sin fechas futuras) y escribe un motivo de al menos 5 caracteres.');
   start=new Date(a).toISOString();end=new Date(b).toISOString();
-  const shift=(await this.rows<Shift>('SELECT * FROM personnel.shifts WHERE id=$1',[id]))[0];if(!shift)fail('Turno no encontrado.',404);
-  if((await this.rows('SELECT id FROM personnel.shifts WHERE worker_id=$1 AND id<>$2 AND started_at<$3 AND (ended_at IS NULL OR ended_at>$4)',[shift.worker_id,id,end,start])).length)fail('Las horas se superponen con otro turno de este trabajador.');
+  const shift=(await this.rows<Shift>('SELECT * FROM personnel.shifts WHERE deleted_at IS NULL AND id=$1',[id]))[0];if(!shift)fail('Turno no encontrado.',404);
+  if((await this.rows('SELECT id FROM personnel.shifts WHERE deleted_at IS NULL AND worker_id=$1 AND id<>$2 AND started_at<$3 AND (ended_at IS NULL OR ended_at>$4)',[shift.worker_id,id,end,start])).length)fail('Las horas se superponen con otro turno de este trabajador.');
   const updated={...shift,started_at:start,ended_at:end};await this.client.query('UPDATE personnel.shifts SET started_at=$1,ended_at=$2 WHERE id=$3',[start,end,id]);
   await this.client.query('INSERT INTO personnel.audit(shift_id,actor,reason,before_json,after_json,created_at) VALUES($1,$2,$3,$4,$5,$6)',[id,actor,reason,JSON.stringify(shift),JSON.stringify(updated),new Date(now).toISOString()]);return updated;
  }

@@ -44,3 +44,6 @@ All personnel operations run inside database transactions with a shared advisory
 ## Dashboard username login
 
 The main login accepts the unique local part of an email already in `DASHBOARD_ALLOWED_EMAILS` (currently `alaguapapos`). The server resolves the email privately and verifies the existing Supabase password. Password requirements and administrator allowlisting are unchanged. Ambiguous usernames are rejected.
+
+## Editar y eliminar registros
+En Personal → Registros → Entradas y salidas, cada turno muestra Editar y Eliminar. En teléfonos se presentan como tarjetas. Eliminar exige confirmación y motivo; conserva el registro y la auditoría, pero lo excluye de turnos activos, horas, pago semanal/mensual y exportaciones.

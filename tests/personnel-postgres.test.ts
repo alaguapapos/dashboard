@@ -35,6 +35,14 @@ test('Supabase personnel: durable auth, concurrent clocks, payroll cutoff, audit
   const outKey=randomUUID();const out=await run(s=>s.kioskClock(id,reset.pin,'out',outKey,'integration-kiosk'));assert.ok(!(out instanceof PersonnelError));assert.equal(await run(s=>s.current(id)),null);
   const next=await run(s=>s.kioskClock(id,reset.pin,'in',randomUUID(),'integration-kiosk'));assert.ok(!(next instanceof PersonnelError));
   assert.deepEqual(await run(s=>s.kioskClock(id,reset.pin,'out',outKey,'integration-kiosk')),out);assert.ok(await run(s=>s.current(id)),'retrying an old exit must not close the new shift');
+  const open=await run(s=>s.current(id));assert.ok(open);
+  await run(s=>s.remove(open.id,'Registro de prueba','integration-test'));
+  assert.equal(await run(s=>s.current(id)),null);
+  await run(s=>s.remove(starts[0].id,'Registro de prueba','integration-test'));
+  const removed=await run(s=>s.report('2026-11-01','2026-11-07'));
+  assert.ok(!removed.shifts.some(s=>s.id===starts[0].id||s.id===open.id));
+  assert.ok(removed.audit.some(a=>a.shift_id===open.id&&JSON.parse(a.after_json).deleted_at));
+  assert.ok(await run(s=>s.clock(id,'in',randomUUID())),'deleted open shift must not block another entry');
   const access=(await pool.query("SELECT has_schema_privilege('anon','personnel','USAGE') AS anon,has_schema_privilege('authenticated','personnel','USAGE') AS authenticated,(SELECT bool_and(relrowsecurity) FROM pg_class JOIN pg_namespace ON pg_namespace.oid=relnamespace WHERE nspname='personnel' AND relkind='r') AS rls")).rows[0];assert.deepEqual(access,{anon:false,authenticated:false,rls:true});
  }finally{
   if(id)await run(async s=>{const w=await s.worker(id);assert.ok(w?.username.startsWith('test.'));await s.client.query('DELETE FROM personnel.clock_requests WHERE worker_id=$1',[id]);await s.client.query('DELETE FROM personnel.audit WHERE shift_id IN (SELECT id FROM personnel.shifts WHERE worker_id=$1)',[id]);await s.client.query('DELETE FROM personnel.sessions WHERE worker_id=$1',[id]);await s.client.query('DELETE FROM personnel.shifts WHERE worker_id=$1',[id]);await s.client.query('DELETE FROM personnel.attempts WHERE username=$1',['user:'+w.username]);await s.client.query('DELETE FROM personnel.workers WHERE id=$1',[id]);});
