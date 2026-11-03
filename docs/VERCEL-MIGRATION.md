@@ -36,3 +36,7 @@ Apply `supabase/clip-archive.sql` to the existing private database. Configure a 
 Every run rechecks the available 90 days; completed reports are atomically upserted by Clip report ID. No age-based deletion runs. Failed or interrupted reports leave previous data intact. A six-minute database lease prevents overlapping workers. `clip_sync_state` records attempts, last complete success, and failures, surfaced in the dashboard. A timed-out run retains its in-progress warning until the next successful run. No card tokens or customer information are archived.
 
 The archive cannot reconstruct already-expired reports. Missing historical net amounts remain unconfirmed until actual reports are imported. Deposit summaries use deposit date; per-payment fees use sale date. Include these two archive tables in regular database backups. Saved history survives Clip's API window, but not deletion of the database itself.
+
+## Personnel
+
+Personnel uses the same Supabase database through server-only `POSTGRES_URL`. Apply `supabase/personnel.sql` and import the earlier SQLite preview with `scripts/migrate-personnel.ts` before the first personnel deployment. See `docs/PERSONNEL.md` for access boundaries, migration behavior, and integration tests. `/equipo` is the worker login; `/personal` requires the existing administrator login.

@@ -6,4 +6,4 @@ export async function proxy(request:NextRequest){
  const client=createServerClient(process.env.NEXT_PUBLIC_SUPABASE_URL,process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,{cookies:{getAll:()=>request.cookies.getAll(),setAll(values){values.forEach(({name,value})=>request.cookies.set(name,value));response=NextResponse.next({request});values.forEach(({name,value,options})=>response.cookies.set(name,value,options));}}});
  await client.auth.getUser();response.headers.set('Cache-Control','private, no-store');return response;
 }
-export const config={matcher:['/','/login','/account','/api/:path*']};
+export const config={matcher:['/','/login','/account','/personal','/api/:path*']};
