@@ -47,3 +47,9 @@ The main login accepts the unique local part of an email already in `DASHBOARD_A
 
 ## Editar y eliminar registros
 En Personal → Registros → Entradas y salidas, cada turno muestra Editar y Eliminar. En teléfonos se presentan como tarjetas. Eliminar exige confirmación y motivo; conserva el registro y la auditoría, pero lo excluye de turnos activos, horas, pago semanal/mensual y exportaciones.
+
+## Equipo home and shared phones (2026-11-03)
+
+`/equipo` is the shared-device home, with Entrada y salida (`/equipo/asistencia`) and Inventario (`/equipo/inventario`). Every employee-route entry clears inventory and legacy worker sessions before showing its content. Returning home, switching workers, five minutes of inventory inactivity, or a worker change in another tab clears local identity and drafts. A failed logout stays locked; refreshing cannot reopen the old session without a fresh successful PIN. Owner authentication remains independent.
+
+The inventory client binds requests to the worker who successfully entered a PIN. The server rejects mismatched worker identities and does not fall back to the owner's session for a worker request. Attendance actions remain one-time PIN operations and return to the worker roster. Mobile icon/title rows, 44px+ controls, responsive cards, and both color themes were inspected at phone and tablet sizes.

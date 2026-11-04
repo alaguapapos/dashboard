@@ -1,0 +1,7 @@
+import Link from 'next/link';
+import {ArrowUpRight,Clock3,Droplets,Package,ShieldCheck} from 'lucide-react';
+import {ThemeToggle} from '@/components/theme-toggle';
+import styles from './equipo-home.module.css';
+export default function EquipoHome(){
+ return <main className={styles.page}><header className={styles.header}><span className={styles.brand}><Droplets size={23} aria-hidden="true"/>AL AGUA PAPOS</span><ThemeToggle/></header><div className={styles.content}><p className={styles.eyebrow}>ESPACIO DEL EQUIPO</p><h1>¿Qué necesitas hacer?</h1><p className={styles.intro}>Elige una opción para comenzar.</p><nav className={styles.tiles} aria-label="Herramientas del equipo"><Link href="/equipo/asistencia" className={styles.tile}><span className={`${styles.icon} ${styles.clock}`}><Clock3 size={27} aria-hidden="true"/></span><span className={styles.tileBody}><strong>Entrada y salida</strong><span>Registra tu jornada con tu nombre y PIN.</span></span><ArrowUpRight size={21} className={styles.arrow} aria-hidden="true"/></Link><Link href="/equipo/inventario" className={styles.tile}><span className={`${styles.icon} ${styles.inventory}`}><Package size={27} aria-hidden="true"/></span><span className={styles.tileBody}><strong>Inventario</strong><span>Registra pedidos, actualiza pares y entrega.</span></span><ArrowUpRight size={21} className={styles.arrow} aria-hidden="true"/></Link></nav><p className={styles.hint}><ShieldCheck size={17} aria-hidden="true"/><span>Un teléfono para todos.<br/>Cada trabajador usa su propio PIN.</span></p></div></main>;
+}

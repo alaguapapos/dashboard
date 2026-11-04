@@ -1,0 +1,15 @@
+.card{display:grid;grid-template-columns:minmax(200px,1fr) minmax(280px,1.25fr);gap:24px;align-items:center;margin:0 0 24px;padding:18px 22px;border:1px solid var(--border);border-radius:16px;background:var(--card);color:var(--foreground)}
+.heading{display:flex;align-items:center;justify-content:space-between;gap:16px;min-width:0}
+.heading h2{display:flex;align-items:center;gap:8px;margin:0;font-size:16px;line-height:1.4;font-weight:650;letter-spacing:-.3px}
+.heading p{font-size:12px;line-height:1.5;color:var(--muted-foreground);margin:4px 0 0}
+.heading a{display:inline-flex;align-items:center;justify-content:center;gap:4px;min-height:44px;font-size:12px;font-weight:550;color:var(--primary);text-decoration:none;white-space:nowrap}
+.heading a:focus-visible,.status button:focus-visible{outline:3px solid var(--ring);outline-offset:3px;border-radius:6px}
+.counts{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));margin:0;gap:0}
+.counts>div{display:flex;flex-direction:column;gap:4px;padding:0 18px;border-left:1px solid var(--border);min-width:0}
+.counts dt{color:var(--muted-foreground);font-size:12px;line-height:1.5}
+.counts dd{margin:0;font-size:26px;line-height:1.2;font-weight:650;font-variant-numeric:tabular-nums;overflow-wrap:anywhere;letter-spacing:-.6px}
+.counts .ready dd{color:var(--primary)}
+.status{grid-column:1/-1;margin:0;display:flex;align-items:center;gap:10px;flex-wrap:wrap;color:var(--muted-foreground);font-size:12px;line-height:1.5}
+.status button{min-height:44px;padding:0 10px;border:1px solid var(--border);border-radius:8px;background:var(--background);color:var(--foreground);font:inherit;cursor:pointer}
+@media(max-width:1200px){.card{grid-template-columns:1fr;gap:14px}.counts>div:first-child{border:0;padding-left:0}.counts>div:last-child{padding-right:0}}
+@media(max-width:640px){.card{padding:14px 16px;gap:12px;margin-bottom:18px;border-radius:14px}.heading{gap:8px}.heading h2{font-size:15px}.heading a{font-size:11px}.heading p{font-size:11px}.counts>div{padding:0 12px;gap:3px}.counts dt{font-size:11px}.counts dd{font-size:24px}}

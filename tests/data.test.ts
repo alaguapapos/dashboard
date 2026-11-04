@@ -49,13 +49,21 @@ test('settlement pagination cannot send credentials to another host',()=>{
  assert.throws(()=>settlementPath('/payments'));
 });
 
-import {businessClock,dayStatus} from '../lib/data/business-day.ts';
+import {businessClock,dayStatus,isClosedDay} from '../lib/data/business-day.ts';
 test('business day ends at 7:30pm Mexico City without shifting calendar dates',()=>{
  assert.equal(businessClock(new Date('2026-10-31T01:29:59Z')).closed,false);
  assert.equal(businessClock(new Date('2026-10-31T01:30:00Z')).closed,true);
  assert.equal(businessClock(new Date('2026-10-31T03:00:00Z')).day,'2026-10-30');
  assert.equal(dayStatus('2026-10-30',new Date('2026-10-31T01:30:00Z')),'Jornada finalizada');
  assert.equal(dayStatus('2026-10-29',new Date('2026-10-30T12:00:00Z')),'Jornada finalizada');
+});
+test('Sundays stay closed before and after closing time, including historical dates',()=>{
+ assert.equal(isClosedDay('2026-11-01'),true);
+ assert.equal(isClosedDay('2026-11-02'),false);
+ assert.equal(dayStatus('2026-11-01',new Date('2026-11-01T16:00:00Z')),'Domingo · cerrado');
+ assert.equal(dayStatus('2026-11-01',new Date('2026-11-02T02:00:00Z')),'Domingo · cerrado');
+ assert.equal(dayStatus('2026-10-11',new Date('2026-11-03T18:00:00Z')),'Domingo · cerrado');
+ assert.equal(dayStatus('2026-11-02',new Date('2026-11-02T16:00:00Z')),'En curso');
 });
 
 import {settlementHistory,cardSettlementSummary} from '../lib/data/fees.ts';

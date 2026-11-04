@@ -1,13 +1,15 @@
 import {authorize,currentUser,sameOrigin} from '@/lib/server/auth';
 import {admin,BUCKET} from '@/lib/server/storage';
+import {withPersonnel,personnelJson,personnelError} from '@/lib/server/personnel';
+import {changeExpenseState} from '@/lib/data/expense-recovery';
 import {validateExpense,receiptType} from '@/lib/data/expense-validation';
 export const dynamic='force-dynamic';
 export const maxDuration=60;
 const headers={'Cache-Control':'private, no-store'};
-export async function GET(){
+export async function GET(request:Request){
  const denied=await authorize();if(denied)return denied;
- try{const db=admin(),rows=[];
-  for(let offset=0;;offset+=1000){const {data,error}=await db.from('expenses').select('id,date,category,description,cents,method,cash_source,spent_by,receipt_name,receipt_key,created_at,updated_at').order('date',{ascending:false}).order('created_at',{ascending:false}).order('id').range(offset,offset+999);if(error)throw error;rows.push(...data.map(({receipt_key,...row})=>({...row,has_receipt:receipt_key?1:0})));if(data.length<1000)break;}
+ try{const db=admin(),rows=[],deleted=new URL(request.url).searchParams.get('deleted')==='true';
+  for(let offset=0;;offset+=1000){const query=db.from('expenses').select('id,date,category,description,cents,method,cash_source,spent_by,receipt_name,receipt_key,created_at,updated_at,deleted_at,deleted_by');const {data,error}=await (deleted?query.not('deleted_at','is',null):query.is('deleted_at',null)).order('date',{ascending:false}).order('created_at',{ascending:false}).order('id').range(offset,offset+999);if(error)throw error;rows.push(...data.map(({receipt_key,...row})=>({...row,has_receipt:receipt_key?1:0})));if(data.length<1000)break;}
   return Response.json(rows,{headers});
  }catch{return Response.json({error:'No se pudieron cargar los egresos.'},{status:503,headers});}
 }
@@ -19,6 +21,8 @@ export async function POST(request:Request){
   if(typeof e.id!=='string')throw Error();
   const db=admin();const old=await db.from('expenses').select('*').eq('id',e.id).maybeSingle();if(old.error)throw old.error;
   const existing=old.data;
+  if(existing?.deleted_at)return Response.json({error:'Este egreso está en Eliminados. Restáuralo antes de editarlo.'},{status:409,headers});
+  if(existing&&e.expected_updated_at!==existing.updated_at)return Response.json({error:'Otro usuario actualizó este egreso. Cierra el formulario y vuelve a abrirlo antes de guardar.'},{status:409,headers});
   const invalid=validateExpense(e);if(invalid)return Response.json({error:invalid},{status:400,headers});
   let key=existing?.receipt_key??null,name=existing?.receipt_name??null,type=existing?.receipt_type??null;
   if(e.uploadId){
@@ -33,15 +37,15 @@ export async function POST(request:Request){
   const now=new Date().toISOString();
   const row={id:e.id,date:e.date,category:e.category.trim(),description:e.description.trim(),cents:e.cents,method:e.method,cash_source:e.cash_source,spent_by:e.spent_by?.trim()||null,receipt_key:key,receipt_name:name,receipt_type:type,created_at:existing?.created_at??now,updated_at:now};
   // Optimistic update prevents concurrent receipt edits from silently overwriting one another.
-  const saved=existing?await db.from('expenses').update(row).eq('id',e.id).eq('updated_at',existing.updated_at).select('id'):await db.from('expenses').insert(row).select('id');
+  const saved=existing?await db.from('expenses').update(row).eq('id',e.id).eq('updated_at',existing.updated_at).is('deleted_at',null).select('id'):await db.from('expenses').insert(row).select('id');
   if(saved.error)throw saved.error;if(!saved.data?.length)return Response.json({error:'El egreso cambió. Recarga antes de guardar.'},{status:409,headers});
   // Retain superseded objects for recovery. A separate audited cleanup can remove orphans.
   if(e.uploadId)await db.from('receipt_uploads').delete().eq('id',e.uploadId).eq('user_id',user.id);
   return Response.json({ok:true},{headers});
- }catch{return Response.json({error:'No se pudo guardar el egreso. Revisa el ticket e intenta de nuevo.'},{status:400,headers});}
+ }catch{return Response.json({error:'No se pudo guardar el egreso. Revisa los datos e intenta de nuevo.'},{status:400,headers});}
 }
 export async function DELETE(request:Request){
- const denied=await authorize();if(denied)return denied;
- if(!sameOrigin(request))return Response.json({error:'Origen no autorizado.'},{status:403});
- try{const {id}=await request.json();if(typeof id!=='string'||!/^[a-zA-Z0-9-]{10,64}$/.test(id))throw Error();const {error}=await admin().from('expenses').delete().eq('id',id);if(error)throw error;return Response.json({ok:true},{headers});}catch{return Response.json({error:'No se pudo eliminar.'},{status:400,headers});}
+ const user=await currentUser();if(!user)return personnelJson({error:'Inicia sesión.'},401);
+ if(!sameOrigin(request))return personnelJson({error:'Origen no autorizado.'},403);
+ try{const raw=await request.json();return personnelJson(await withPersonnel(s=>changeExpenseState(s,raw,user.email!,'delete')));}catch(error){return personnelError(error);}
 }
