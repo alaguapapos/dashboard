@@ -2,7 +2,7 @@ import {DatabaseSync} from 'node:sqlite';
 import {randomBytes,randomInt,randomUUID,scryptSync,timingSafeEqual,createHash} from 'node:crypto';
 import {mkdirSync} from 'node:fs';
 import {dirname} from 'node:path';
-import {RATES,type Worker,type WorkerRole,type Shift,type Audit} from './types.ts';
+import {RATES,isPayrollRole,type Worker,type WorkerRole,type Shift,type Audit} from './types.ts';
 import {payroll,dayStart,validateRange,payPeriods} from './payroll.ts';
 import {PersonnelError} from './errors.ts';
 export {PersonnelError} from './errors.ts';
@@ -15,7 +15,7 @@ export class PersonnelStore {
  constructor(path:string){
   if(path!==':memory:')mkdirSync(dirname(path),{recursive:true,mode:0o700});
   this.db=new DatabaseSync(path);this.db.exec(`PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000;
-   CREATE TABLE IF NOT EXISTS workers(id TEXT PRIMARY KEY,name TEXT NOT NULL,username TEXT NOT NULL UNIQUE,role TEXT NOT NULL CHECK(role IN ('lavador','detallador')),active INTEGER NOT NULL DEFAULT 1,pin_hash TEXT);
+   CREATE TABLE IF NOT EXISTS workers(id TEXT PRIMARY KEY,name TEXT NOT NULL,username TEXT NOT NULL UNIQUE,role TEXT NOT NULL CHECK(role IN ('lavador','detallador','administrador')),active INTEGER NOT NULL DEFAULT 1,pin_hash TEXT);
    CREATE TABLE IF NOT EXISTS shifts(id TEXT PRIMARY KEY,worker_id TEXT NOT NULL REFERENCES workers(id),role TEXT NOT NULL,rate_cents INTEGER NOT NULL,started_at TEXT NOT NULL,ended_at TEXT,request_id TEXT NOT NULL UNIQUE);
    CREATE UNIQUE INDEX IF NOT EXISTS open_shift ON shifts(worker_id) WHERE ended_at IS NULL;
    CREATE INDEX IF NOT EXISTS shift_dates ON shifts(started_at,ended_at);
@@ -23,6 +23,14 @@ export class PersonnelStore {
    CREATE TABLE IF NOT EXISTS attempts(username TEXT PRIMARY KEY,count INTEGER NOT NULL,until_ms INTEGER NOT NULL);
    CREATE TABLE IF NOT EXISTS audit(id INTEGER PRIMARY KEY AUTOINCREMENT,shift_id TEXT NOT NULL,actor TEXT NOT NULL,reason TEXT NOT NULL,before_json TEXT NOT NULL,after_json TEXT NOT NULL,created_at TEXT NOT NULL);
    CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY,value TEXT NOT NULL);`);
+  const workerSchema=this.db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='workers'").get() as {sql:string};
+  if(!workerSchema.sql.includes("'administrador'")){
+   this.db.exec('PRAGMA foreign_keys=OFF');
+   try{this.transaction(()=>{
+    this.db.exec("CREATE TABLE workers_access_upgrade(id TEXT PRIMARY KEY,name TEXT NOT NULL,username TEXT NOT NULL UNIQUE,role TEXT NOT NULL CHECK(role IN ('lavador','detallador','administrador')),active INTEGER NOT NULL DEFAULT 1,pin_hash TEXT); INSERT INTO workers_access_upgrade SELECT id,name,username,role,active,pin_hash FROM workers; DROP TABLE workers; ALTER TABLE workers_access_upgrade RENAME TO workers;");
+    if(this.db.prepare('PRAGMA foreign_key_check').all().length)throw Error('Worker access migration failed its relationship check.');
+   });}finally{this.db.exec('PRAGMA foreign_keys=ON');}
+  }
   this.transaction(()=>{if(!this.db.prepare("SELECT key FROM settings WHERE key='seeded'").get()){
    for(const [name,role] of [['Julio','lavador'],['Emilio','lavador'],['Diego','detallador'],['Alejandro','detallador'],['Mitch','detallador']] as const)this.db.prepare('INSERT INTO workers(id,name,username,role) VALUES(?,?,?,?)').run(randomUUID(),name,name.toLowerCase(),role);
    this.db.prepare("INSERT INTO settings VALUES('seeded','1')").run();
@@ -38,6 +46,7 @@ export class PersonnelStore {
   if(!name||name.length>80||! /^[a-z0-9][a-z0-9._-]{2,39}$/.test(username)||!Object.hasOwn(RATES,input.role)||typeof input.active!=='boolean')fail('Revisa el nombre, tipo y usuario (3–40 letras sin acentos, números, puntos o guiones).');
   return this.transaction(()=>{
    const old=input.id?this.worker(input.id):undefined;if(input.id&&!old)fail('Trabajador no encontrado.',404);
+   if(old&&isPayrollRole(old.role)!==isPayrollRole(input.role))fail('Crea un acceso separado para inventario. No se puede convertir un trabajador en administrador ni al revés.');
    if(old&&this.current(old.id)&&(old.role!==input.role||!input.active))fail('Registra la salida antes de cambiar el tipo o desactivar al trabajador.');
    const duplicate=this.db.prepare('SELECT id FROM workers WHERE username=? AND id<>?').get(username,input.id??'');if(duplicate)fail('Ese usuario ya existe.');
    const id=input.id??randomUUID();
@@ -47,7 +56,8 @@ export class PersonnelStore {
    return this.worker(id)!;
   });
  }
- resetPin(id:string){return this.transaction(()=>{const worker=this.worker(id);if(!worker)fail('Trabajador no encontrado.',404);if(!worker.active)fail('Activa al trabajador antes de crear su acceso.');const pin=String(randomInt(1000,10000));this.db.prepare('UPDATE workers SET pin_hash=? WHERE id=?').run(pinHash(pin),id);this.db.prepare('DELETE FROM sessions WHERE worker_id=?').run(id);this.db.prepare('DELETE FROM attempts WHERE username=?').run(worker.username);return {username:worker.username,pin};});}
+ resetPin(id:string){return this.setPin(id,String(randomInt(1000,10000)));}
+ setPin(id:string,pin:string){if(!/^\d{4}$/.test(pin))fail('El PIN debe tener cuatro dígitos.');return this.transaction(()=>{const worker=this.worker(id);if(!worker)fail('Trabajador no encontrado.',404);if(!worker.active)fail('Activa al trabajador antes de crear su acceso.');this.db.prepare('UPDATE workers SET pin_hash=? WHERE id=?').run(pinHash(pin),id);this.db.prepare('DELETE FROM sessions WHERE worker_id=?').run(id);this.db.prepare('DELETE FROM attempts WHERE username=?').run(worker.username);return {username:worker.username,pin};});}
  login(username:string,pin:string,now=Date.now()){
   username=String(username??'').trim().toLowerCase();pin=String(pin??'');
   if(username.length>40||pin.length>32)fail('Usuario o PIN incorrectos.',401);
@@ -65,6 +75,7 @@ export class PersonnelStore {
  clock(id:string,action:'in'|'out',requestId:string,now=new Date().toISOString()){
   if(!/^[a-zA-Z0-9-]{16,80}$/.test(requestId))fail('Identificador de registro inválido.');
   return this.transaction(()=>{const worker=this.worker(id);if(!worker?.active)fail('Acceso no disponible.',401);
+   if(!isPayrollRole(worker.role))fail('Este acceso es solo para inventario; no registra jornadas ni genera nómina.',403);
    if(action==='in'){
     const duplicate=this.db.prepare('SELECT * FROM shifts WHERE request_id=? AND worker_id=?').get(requestId,id) as Shift|undefined;if(duplicate)return duplicate;
     const open=this.current(id);if(open)return open;
@@ -78,8 +89,8 @@ export class PersonnelStore {
   });
  }
  history(id:string){return this.db.prepare('SELECT * FROM shifts WHERE worker_id=? ORDER BY started_at DESC LIMIT 50').all(id) as Shift[];}
- report(from:string,to:string,now=new Date().toISOString()){try{validateRange(from,to);}catch(e){fail((e as Error).message);}const periods=payPeriods(now);const estimate=(a:string,b:string)=>{const records=this.db.prepare('SELECT * FROM shifts WHERE started_at<? AND (ended_at IS NULL OR ended_at>?)').all(new Date(dayStart(b)+86400000).toISOString(),new Date(dayStart(a)).toISOString()) as Shift[];const completed=payroll(records,a,b);const live=payroll(records.map(s=>s.ended_at?s:{...s,ended_at:now}),a,b);return {from:a,to:b,days:live,completedCents:completed.reduce((n,d)=>n+d.cents,0),liveCents:live.reduce((n,d)=>n+d.cents,0),openCount:records.filter(s=>!s.ended_at).length};};const start=new Date(dayStart(from)).toISOString(),end=new Date(dayStart(to)+86400000).toISOString();const shifts=this.db.prepare('SELECT * FROM shifts WHERE started_at<? AND (ended_at IS NULL OR ended_at>?) ORDER BY started_at DESC').all(end,start) as Shift[];
-  return {week:estimate(periods.weekFrom,periods.weekTo),month:estimate(periods.monthFrom,periods.monthTo),workers:this.workers(),shifts,active:this.db.prepare('SELECT * FROM shifts WHERE ended_at IS NULL').all() as Shift[],days:payroll(shifts,from,to),audit:this.db.prepare('SELECT * FROM audit ORDER BY id DESC LIMIT 100').all() as Audit[],now:new Date().toISOString()};
+ report(from:string,to:string,now=new Date().toISOString()){try{validateRange(from,to);}catch(e){fail((e as Error).message);}const periods=payPeriods(now);const estimate=(a:string,b:string)=>{const records=this.db.prepare("SELECT * FROM shifts WHERE role IN ('lavador','detallador') AND worker_id IN (SELECT id FROM workers WHERE role IN ('lavador','detallador')) AND started_at<? AND (ended_at IS NULL OR ended_at>?)").all(new Date(dayStart(b)+86400000).toISOString(),new Date(dayStart(a)).toISOString()) as Shift[];const completed=payroll(records,a,b);const live=payroll(records.map(s=>s.ended_at?s:{...s,ended_at:now}),a,b);return {from:a,to:b,days:live,completedCents:completed.reduce((n,d)=>n+d.cents,0),liveCents:live.reduce((n,d)=>n+d.cents,0),openCount:records.filter(s=>!s.ended_at).length};};const start=new Date(dayStart(from)).toISOString(),end=new Date(dayStart(to)+86400000).toISOString();const shifts=this.db.prepare("SELECT * FROM shifts WHERE role IN ('lavador','detallador') AND worker_id IN (SELECT id FROM workers WHERE role IN ('lavador','detallador')) AND started_at<? AND (ended_at IS NULL OR ended_at>?) ORDER BY started_at DESC").all(end,start) as Shift[];
+  return {week:estimate(periods.weekFrom,periods.weekTo),month:estimate(periods.monthFrom,periods.monthTo),workers:this.workers().filter(w=>isPayrollRole(w.role)),inventoryAdmins:this.workers().filter(w=>w.role==='administrador'),shifts,active:this.db.prepare("SELECT * FROM shifts WHERE role IN ('lavador','detallador') AND worker_id IN (SELECT id FROM workers WHERE role IN ('lavador','detallador')) AND ended_at IS NULL").all() as Shift[],days:payroll(shifts,from,to),audit:this.db.prepare('SELECT * FROM audit ORDER BY id DESC LIMIT 100').all() as Audit[],now:new Date().toISOString()};
  }
  correct(id:string,start:string,end:string,reason:string,actor:string,now=Date.now()){
   const a=Date.parse(start),b=Date.parse(end);reason=String(reason??'').trim();

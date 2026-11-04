@@ -3,7 +3,7 @@ import {randomBytes,randomInt,randomUUID,scryptSync,timingSafeEqual,createHash} 
 import {rootCertificates} from 'node:tls';
 import {SUPABASE_CA} from './supabase-ca.ts';
 import {PersonnelError} from './errors.ts';
-import {RATES,type Worker,type WorkerRole,type Shift,type Audit} from './types.ts';
+import {RATES,isPayrollRole,type Worker,type WorkerRole,type Shift,type Audit} from './types.ts';
 import {payroll,dayStart,validateRange,payPeriods} from './payroll.ts';
 const digest=(value:string)=>createHash('sha256').update(value).digest('hex');
 function fail(message:string,status=400):never{throw new PersonnelError(message,status);}
@@ -36,6 +36,7 @@ export class PostgresPersonnelStore {
   const name=String(input?.name??'').trim(),username=String(input?.username??'').trim().toLowerCase();
   if(!name||name.length>80||!/^[a-z0-9][a-z0-9._-]{2,39}$/.test(username)||!Object.hasOwn(RATES,input?.role)||typeof input?.active!=='boolean')fail('Revisa el nombre, tipo y usuario (3–40 letras sin acentos, números, puntos o guiones).');
   const old=input.id?await this.worker(input.id):undefined;if(input.id&&!old)fail('Trabajador no encontrado.',404);
+   if(old&&isPayrollRole(old.role)!==isPayrollRole(input.role))fail('Crea un acceso separado para inventario. No se puede convertir un trabajador en administrador ni al revés.');
   if(old&&await this.current(old.id)&&(old.role!==input.role||!input.active))fail('Registra la salida antes de cambiar el tipo o desactivar al trabajador.');
   if((await this.rows('SELECT id FROM personnel.workers WHERE username=$1 AND id<>$2',[username,input.id??''])).length)fail('Ese usuario ya existe.');
   const id=input.id??randomUUID();
@@ -44,9 +45,11 @@ export class PostgresPersonnelStore {
   if(!input.active||old?.username!==username)await this.client.query('DELETE FROM personnel.sessions WHERE worker_id=$1',[id]);
   return (await this.worker(id))!;
  }
- async resetPin(id:string){
+ async resetPin(id:string){return this.setPin(id,String(randomInt(1000,10000)));}
+ async setPin(id:string,pin:string){
+  if(!/^\d{4}$/.test(pin))fail('El PIN debe tener cuatro dígitos.');
   const worker=await this.worker(id);if(!worker)fail('Trabajador no encontrado.',404);if(!worker.active)fail('Activa al trabajador antes de crear su acceso.');
-  const pin=String(randomInt(1000,10000));await this.client.query('UPDATE personnel.workers SET pin_hash=$1 WHERE id=$2',[pinHash(pin),id]);
+  await this.client.query('UPDATE personnel.workers SET pin_hash=$1 WHERE id=$2',[pinHash(pin),id]);
   await this.client.query('DELETE FROM personnel.sessions WHERE worker_id=$1',[id]);await this.client.query('DELETE FROM personnel.attempts WHERE username=$1',['user:'+worker.username]);return {username:worker.username,pin};
  }
  async attempt(key:string,now:number,limit:number){
@@ -73,6 +76,7 @@ export class PostgresPersonnelStore {
   if(token instanceof PersonnelError)return token;
   await this.logout(token); // PIN authenticates this action only; no session survives.
   if(!worker)return new PersonnelError('Usuario o PIN incorrectos.',401);
+  if(!isPayrollRole(worker.role))return new PersonnelError('Este acceso es solo para inventario; no registra jornadas ni genera nómina.',403);
   const previous=(await this.rows<{worker_id:string;operation:string;shift_id:string}>('SELECT worker_id,operation,shift_id FROM personnel.clock_requests WHERE request_id=$1',[requestId]))[0];
   let shift:Shift;
   if(previous){
@@ -96,6 +100,7 @@ export class PostgresPersonnelStore {
  async clock(id:string,action:'in'|'out',requestId:string,now=new Date().toISOString()){
   if(!/^[a-zA-Z0-9-]{16,80}$/.test(requestId))fail('Identificador de registro inválido.');
   const worker=await this.worker(id);if(!worker?.active)fail('Acceso no disponible.',401);
+  if(!isPayrollRole(worker.role))fail('Este acceso es solo para inventario; no registra jornadas ni genera nómina.',403);
   if(action==='in'){
    const duplicate=(await this.rows<Shift>('SELECT * FROM personnel.shifts WHERE deleted_at IS NULL AND request_id=$1 AND worker_id=$2',[requestId,id]))[0];if(duplicate)return duplicate;
    const open=await this.current(id);if(open)return open;
@@ -107,13 +112,14 @@ export class PostgresPersonnelStore {
   await this.client.query('UPDATE personnel.shifts SET ended_at=$1 WHERE id=$2',[now,shift.id]);return {...shift,ended_at:now};
  }
  async history(id:string){return this.rows<Shift>('SELECT * FROM personnel.shifts WHERE deleted_at IS NULL AND worker_id=$1 ORDER BY started_at DESC LIMIT 50',[id]);}
- async range(from:string,to:string){return this.rows<Shift>('SELECT * FROM personnel.shifts WHERE deleted_at IS NULL AND started_at<$1 AND (ended_at IS NULL OR ended_at>$2) ORDER BY started_at DESC',[new Date(dayStart(to)+86400000).toISOString(),new Date(dayStart(from)).toISOString()]);}
+ async range(from:string,to:string){return this.rows<Shift>("SELECT * FROM personnel.shifts WHERE deleted_at IS NULL AND role IN ('lavador','detallador') AND worker_id IN (SELECT id FROM personnel.workers WHERE role IN ('lavador','detallador')) AND started_at<$1 AND (ended_at IS NULL OR ended_at>$2) ORDER BY started_at DESC",[new Date(dayStart(to)+86400000).toISOString(),new Date(dayStart(from)).toISOString()]);}
  async report(from:string,to:string,now=new Date().toISOString()){
   try{validateRange(from,to);}catch(e){fail((e as Error).message);}
   const periods=payPeriods(now);
   const estimate=async(a:string,b:string)=>{const records=await this.range(a,b);const completed=payroll(records,a,b);const live=payroll(records.map(s=>s.ended_at?s:{...s,ended_at:now}),a,b);return {from:a,to:b,days:live,completedCents:completed.reduce((n,d)=>n+d.cents,0),liveCents:live.reduce((n,d)=>n+d.cents,0),openCount:records.filter(s=>!s.ended_at).length};};
   const shifts=await this.range(from,to);
-  return {workers:await this.workers(),shifts,active:await this.rows<Shift>('SELECT * FROM personnel.shifts WHERE deleted_at IS NULL AND ended_at IS NULL'),days:payroll(shifts,from,to),week:await estimate(periods.weekFrom,periods.weekTo),month:await estimate(periods.monthFrom,periods.monthTo),audit:await this.rows<Audit>('SELECT * FROM personnel.audit ORDER BY id DESC LIMIT 100'),now};
+  const accounts=await this.workers();
+  return {workers:accounts.filter(w=>isPayrollRole(w.role)),inventoryAdmins:accounts.filter(w=>w.role==='administrador'),shifts,active:await this.rows<Shift>("SELECT * FROM personnel.shifts WHERE deleted_at IS NULL AND role IN ('lavador','detallador') AND worker_id IN (SELECT id FROM personnel.workers WHERE role IN ('lavador','detallador')) AND ended_at IS NULL"),days:payroll(shifts,from,to),week:await estimate(periods.weekFrom,periods.weekTo),month:await estimate(periods.monthFrom,periods.monthTo),audit:await this.rows<Audit>('SELECT * FROM personnel.audit ORDER BY id DESC LIMIT 100'),now};
  }
  async remove(id:string,reason:string,actor:string,now=Date.now()){
   reason=String(reason??'').trim();if(reason.length<5||reason.length>500)fail('Escribe un motivo de entre 5 y 500 caracteres.');

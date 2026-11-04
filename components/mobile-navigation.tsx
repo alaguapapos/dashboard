@@ -36,7 +36,7 @@ export function MobileNavigation({active, onNavigate}: {active:string; onNavigat
         const content = <><Icon size={20} aria-hidden="true"/><span>{label}</span></>;
         return onNavigate && ['Resumen','Ventas'].includes(label)
           ? <button key={label} type="button" aria-current={active === label ? 'page' : undefined} className={className} onClick={() => onNavigate(label)}>{content}</button>
-          : <Link key={label} href={href} aria-current={active === label ? 'page' : undefined} className={className}><LinkContent>{content}</LinkContent></Link>;
+          : <Link key={label} prefetch={true} href={href} aria-current={active === label ? 'page' : undefined} className={className}><LinkContent>{content}</LinkContent></Link>;
       })}
       <Dialog.Trigger asChild>
         <button type="button" aria-current={moreActive ? 'page' : undefined} className={`${styles.item} ${moreActive ? styles.active : ''}`}><Ellipsis size={20} aria-hidden="true"/><span>Más</span></button>
@@ -54,7 +54,7 @@ export function MobileNavigation({active, onNavigate}: {active:string; onNavigat
           const current = active === label ? 'page' as const : undefined;
           return onNavigate
             ? <button type="button" key={label} aria-current={current} className={styles.destination} onClick={() => {onNavigate(label); setMore(false);}}>{content}</button>
-            : <Link key={label} aria-current={current} className={styles.destination} href={href}><LinkContent>{content}</LinkContent></Link>;
+            : <Link key={label} prefetch={true} aria-current={current} className={styles.destination} href={href}><LinkContent>{content}</LinkContent></Link>;
         })}
       </Dialog.Content>
     </Dialog.Portal>

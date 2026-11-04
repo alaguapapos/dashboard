@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {mkdtempSync,rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
+import {DatabaseSync} from 'node:sqlite';
 import {PersonnelStore} from '../lib/personnel/store.ts';
 import {payroll,payPeriods} from '../lib/personnel/payroll.ts';
 import {type Shift} from '../lib/personnel/types.ts';
@@ -79,4 +80,42 @@ test('Live weekly/monthly cost counts an open Lavador day only once and survives
   const {weekFrom,weekTo}=payPeriods(now);let report=s.report(weekFrom,weekTo,now.toISOString());assert.equal(report.week.liveCents,36000);assert.equal(report.week.completedCents,36000);assert.equal(report.month.liveCents,36000);assert.equal(report.week.openCount,1);
   s.close();s=new PersonnelStore(path);report=s.report(weekFrom,weekTo,now.toISOString());assert.equal(report.active.length,1);assert.equal(s.workers().length,5);
  }finally{s.close();rmSync(folder,{recursive:true,force:true});}
+});
+
+test('inventory administrators authenticate without clock access or payroll rows',()=>{
+ const s=new PersonnelStore(':memory:');try{
+  const before=s.report('2026-11-01','2026-11-07');
+  const receiver=s.saveWorker({name:'Inventory test',username:'inventory.test',role:'administrador',active:true});
+  s.setPin(receiver.id,'0381');
+  const token=s.login(receiver.username,'0381');assert.equal(s.session(token)?.role,'administrador');
+  assert.equal(s.workers().filter(w=>w.role!=='administrador').length,5);
+  assert.throws(()=>s.clock(receiver.id,'in','inventory-admin-guard'),'inventory-only access must not create a shift');
+  assert.throws(()=>s.clock(receiver.id,'out','inventory-admin-guard'));
+  assert.equal(s.current(receiver.id),null);assert.deepEqual(s.history(receiver.id),[]);
+  assert.throws(()=>s.saveWorker({...receiver,role:'lavador',active:true}),/acceso separado/);
+  const worker=s.workers().find(w=>w.role==='lavador')!;assert.throws(()=>s.saveWorker({...worker,role:'administrador',active:true}),/acceso separado/);
+  const after=s.report('2026-11-01','2026-11-07');assert.equal(after.workers.length,before.workers.length);assert.equal(after.inventoryAdmins.length,1);assert.equal(after.inventoryAdmins[0].id,receiver.id);assert.deepEqual(after.days,before.days);assert.equal(after.week.liveCents,before.week.liveCents);assert.equal(after.month.liveCents,before.month.liveCents);
+  // Even an inconsistent historical row must never turn inventory access into payroll.
+  s.db.prepare('INSERT INTO shifts VALUES(?,?,?,?,?,?,?)').run('legacy-admin-row',receiver.id,'lavador',36000,'2026-11-02T15:00:00Z',null,'legacy-admin-request');
+  const guarded=s.report('2026-11-01','2026-11-07','2026-11-02T17:00:00Z');assert.deepEqual(guarded.active,[]);assert.deepEqual(guarded.shifts,[]);assert.equal(guarded.week.openCount,0);assert.equal(guarded.month.openCount,0);assert.equal(guarded.week.liveCents,0);
+  s.db.prepare('UPDATE shifts SET ended_at=? WHERE id=?').run('2026-11-02T17:00:00Z','legacy-admin-row');assert.deepEqual(s.report('2026-11-01','2026-11-07').days,[]);
+  assert.deepEqual(payroll([{...shift('detallador','2026-11-02T15:00:00Z','2026-11-02T17:00:00Z'),role:'administrador',rate_cents:9000}],'2026-11-02','2026-11-02'),[]);
+  assert.throws(()=>s.setPin(receiver.id,'123'));assert.throws(()=>s.setPin(receiver.id,'12345'));
+  s.setPin(receiver.id,'4718');assert.equal(s.session(token),null);assert.throws(()=>s.login(receiver.username,'0381'));
+  const next=s.login(receiver.username,'4718');s.saveWorker({...receiver,active:false});assert.equal(s.session(next),null);
+ }finally{s.close();}
+});
+
+
+test('legacy SQLite role migration preserves paid history and foreign-key references',()=>{
+ const directory=mkdtempSync(join(tmpdir(),'alagua-access-'));const file=join(directory,'personnel.sqlite');
+ const legacy=new DatabaseSync(file);
+ legacy.exec("CREATE TABLE workers(id TEXT PRIMARY KEY,name TEXT NOT NULL,username TEXT NOT NULL UNIQUE,role TEXT NOT NULL CHECK(role IN ('lavador','detallador')),active INTEGER NOT NULL DEFAULT 1,pin_hash TEXT); CREATE TABLE shifts(id TEXT PRIMARY KEY,worker_id TEXT NOT NULL REFERENCES workers(id),role TEXT NOT NULL,rate_cents INTEGER NOT NULL,started_at TEXT NOT NULL,ended_at TEXT,request_id TEXT NOT NULL UNIQUE); CREATE TABLE sessions(token_hash TEXT PRIMARY KEY,worker_id TEXT NOT NULL REFERENCES workers(id),expires INTEGER NOT NULL); CREATE TABLE settings(key TEXT PRIMARY KEY,value TEXT NOT NULL); INSERT INTO settings VALUES('seeded','1'); INSERT INTO workers VALUES('legacy','Legacy worker','legacy','lavador',1,'unchanged-hash'); INSERT INTO shifts VALUES('old-shift','legacy','lavador',36000,'2026-11-02T15:00:00Z','2026-11-02T17:00:00Z','original-request'); INSERT INTO sessions VALUES('old-session','legacy',1999999999999);");
+ legacy.close();
+ const store=new PersonnelStore(file);
+ try{
+  assert.equal(store.worker('legacy')?.username,'legacy');assert.equal(store.db.prepare('SELECT pin_hash FROM workers WHERE id=?').get('legacy')!.pin_hash,'unchanged-hash');assert.equal(store.history('legacy').length,1);assert.equal(store.db.prepare('SELECT count(*) AS count FROM sessions').get()!.count,1);
+  store.saveWorker({name:'Receiver',username:'receiver',role:'administrador',active:true});
+  assert.equal(store.report('2026-11-02','2026-11-02').days[0].cents,36000);assert.deepEqual(store.db.prepare('PRAGMA foreign_key_check').all(),[]);
+ }finally{store.close();rmSync(directory,{recursive:true,force:true});}
 });

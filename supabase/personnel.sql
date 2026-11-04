@@ -5,7 +5,7 @@ REVOKE ALL ON SCHEMA personnel FROM PUBLIC, anon, authenticated;
 CREATE TABLE IF NOT EXISTS personnel.workers (
  id text PRIMARY KEY, name text NOT NULL CHECK(length(name) BETWEEN 1 AND 80),
  username text NOT NULL UNIQUE CHECK(username ~ '^[a-z0-9][a-z0-9._-]{2,39}$'),
- role text NOT NULL CHECK(role IN ('lavador','detallador')),
+ role text NOT NULL CHECK(role IN ('lavador','detallador','administrador')),
  active integer NOT NULL DEFAULT 1 CHECK(active IN (0,1)), pin_hash text
 );
 CREATE TABLE IF NOT EXISTS personnel.shifts (
@@ -51,4 +51,10 @@ BEGIN;
 ALTER TABLE personnel.shifts ADD COLUMN IF NOT EXISTS deleted_at timestamptz;
 DROP INDEX IF EXISTS personnel.one_open_shift;
 CREATE UNIQUE INDEX one_open_shift ON personnel.shifts(worker_id) WHERE ended_at IS NULL AND deleted_at IS NULL;
+COMMIT;
+
+-- Inventory administrators are accounts, never paid workers.
+BEGIN;
+ALTER TABLE personnel.workers DROP CONSTRAINT IF EXISTS workers_role_check;
+ALTER TABLE personnel.workers ADD CONSTRAINT workers_role_check CHECK(role IN ('lavador','detallador','administrador'));
 COMMIT;

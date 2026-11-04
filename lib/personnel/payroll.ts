@@ -1,4 +1,4 @@
-import {type Shift,type PayDay} from './types.ts';
+import {isPayrollRole,type Shift,type PayDay} from './types.ts';
 export const ZONE='America/Mexico_City';
 export const PAID_CUTOFF_HOUR=19;
 export function localDay(value:string|Date=new Date()):string {
@@ -12,7 +12,7 @@ export function payroll(shifts:Shift[],from:string,to:string):PayDay[]{
  validateRange(from,to);
  const groups=new Map<string,PayDay & {hourly:number;dailyRate:number}>();
  for(const shift of shifts){
-  if(!shift.ended_at)continue; // Open shifts are live estimates, never finalized pay.
+  if(!isPayrollRole(shift.role)||!shift.ended_at)continue; // Open shifts are live estimates, never finalized pay.
   let cursor=Math.max(Date.parse(shift.started_at),dayStart(from));
   // A forgotten checkout must not accrue pay overnight or on later days.
   // Preserve the actual attendance timestamps; only the pay window is capped.

@@ -195,6 +195,7 @@ html.dark{color-scheme:dark;--background:#141518;--foreground:#eeeef0;--card:#20
 @media(max-width:640px){.weekly-pay{grid-template-columns:1fr;gap:16px;padding:22px 20px}.monthly-pay{align-items:flex-start;flex-direction:column;padding:20px}.monthly-pay>div:last-child{text-align:left}}
 .people-tabs{flex-direction:row}.people-tabs button{border-radius:0}.people-tabs button:hover{background:var(--muted)}
 /* Reserve space for the shared mobile navigation. */
+@media(max-width:380px){.topbar .avatar.small{display:none}}
 @media(max-width:1024px){
  .people-content{padding-bottom:calc(100px + env(safe-area-inset-bottom))}
 }
